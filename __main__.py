@@ -223,7 +223,59 @@ def h(targets, whites):
             current = new
         return current
 
+def closestpair(targets, whites):
+    if len(targets)!=len(whites):
+        for i in whites:
+            npiece=i[0]
+            if npiece>1:
+                whites.remove(i)
+                for n in range(npiece):
+                    newpiece=(1,i[1],i[2])
+                    whites.append(newpiece)
 
+    #comput sum of all close points input two list of points
+    #1 white
+    list=[]
+    if len(targets)==1:
+        list=[(targets[0], whites[0])]
+
+
+    #2 whites
+    elif len(targets) == 2:
+        #case1: 1_>1,2_>2
+        list=[(targets[0],whites[0]),(targets[1],whites[1])]
+        current = hamming(targets[0],whites[0])+hamming(targets[1],whites[1])
+        #case2: 1_ > 2, 2_ > 1
+        new= hamming(targets[0],whites[1])+hamming(targets[1],whites[0])
+        if new<current:
+            list=[(targets[0],whites[1]),(targets[1],whites[0])]
+
+    #3 whites
+    else:
+        #case1
+        list = [(targets[0], whites[0]), (targets[1], whites[1]), (targets[2],whites[2])]
+        current =hamming(targets[0],whites[0])+hamming(targets[1],whites[1])+hamming(targets[2],whites[2])
+        #case2
+        new= hamming(targets[0],whites[0]) + hamming(targets[1],whites[2])+hamming(targets[2],whites[1])
+        if new < current:
+            list = [(targets[0], whites[0]), (targets[1], whites[2]), (targets[2],whites[1])]
+        #case=3
+        new =hamming(targets[0],whites[1])+hamming(targets[1],whites[2])+hamming(targets[2],whites[0])
+        if new < current:
+            list = [(targets[0], whites[1]), (targets[1], whites[2]), (targets[2],whites[0])]
+        #case4: 1_ > 2, 2_ > 1
+        new= hamming(targets[0],whites[2]) + hamming(targets[1],whites[1])+hamming(targets[2],whites[0])
+        if new < current:
+            list = [(targets[0], whites[2]), (targets[1], whites[1]), (targets[2],whites[0])]
+        #case5: 1_>1,2_>2
+        new =hamming(targets[0],whites[1])+hamming(targets[1],whites[0])+hamming(targets[2],whites[2])
+        if new < current:
+            list = [(targets[0], whites[1]), (targets[1], whites[0]), (targets[2],whites[2])]
+        #case6: 1_ > 2, 2_ > 1
+        new= hamming(targets[0],whites[2]) + hamming(targets[1],whites[2])+hamming(targets[2],whites[0])
+        if new < current:
+            list = [(targets[0], whites[2]), (targets[1], whites[2]), (targets[2], whites[0])]
+    return list
 
 def samepos(nodelist, thisnode):
     if len(nodelist)==0:

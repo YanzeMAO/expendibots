@@ -1,0 +1,589 @@
+import sys
+import json,math
+NEGINF=-10000
+INF = 100000000000
+from search.util import print_move, print_boom, print_board   
+BOARDLEN = 7
+from itertools import permutations
+from collections import defaultdict
+
+def is_closed(p,i):      
+    if math.fabs(p[1]-i[1])<=1 and math.fabs(p[2]-i[2])<=1:
+        return True
+    return False
+
+def wall(blackpos):
+    #return the points that require to below up the wall
+    #check horizontal wall left to right
+    recentvertical = {0, 1, 2, 3, 4, 5, 6, 7}
+    for i in range(8):
+        for p in blackpos:
+            newvertical={}
+            if p[1]==i and p[2] in recentvertical:
+                newvertical.append(p[2])
+                if p[2]==0:
+                    #hit bottom wall
+                    return p
+                elif p[2]==7:
+                    #hit top wall
+                    return p
+                else:
+                    newvertical.append(p[2]-1)
+                    newvertical.append(p[2]+1)
+        recentvertical=newvertical
+    #check horizontal wall right to left
+    recentvertical = {0, 1, 2, 3, 4, 5, 6, 7}
+    for i in range(8,-1):
+        for p in blackpos:
+            newvertical={}
+            if p[1]==i and p[2] in recentvertical:
+                newvertical.append(p[2])
+                if p[2]==0:
+                    #hit bottom wall
+                    return p
+                elif p[2]==7:
+                    #hit top wall
+                    return p
+                else:
+                    newvertical.append(p[2]-1)
+                    newvertical.append(p[2]+1)
+        recentvertical=newvertical
+    return None
+
+
+def maxpoint(boom_dict):
+    #find max value point
+    inverse = [value for key, value in boom_dict.items()]
+    maxvalue=max(inverse)
+    for i in range(8):
+        for j in range(8):
+            if maxvalue==boom_dict[(i,j)]:
+                return (i,j)
+
+def find_boom_dict(chunks):
+    boom_dict={}
+    #find boom value for board
+    for i in range(8):
+        for j in range(8):
+            boom_dict[(i,j)]=0
+
+    for i in range(8):
+        for j in range(8):
+
+            point=(0,i,j)
+            for c in chunks:
+                for p in c:
+                    if is_closed(p, point):
+                        boom_dict[(i,j)]+=1
+                        break
+                for p in c:  
+                    if i == p[1] and j == p[2]:
+                        boom_dict[(i, j)] = NEGINF
+
+
+    ##print_board(boom_dict)
+    return boom_dict
+
+def maxpoint(boom_dict):   
+    #find max value point (the coordinate of white token that can boom most chuncks)
+    inverse = [value for key, value in boom_dict.items()]
+    maxvalue=max(inverse)
+    for i in range(8):
+        for j in range(8):
+            if maxvalue==boom_dict[(i,j)]:
+                return (i,j)
+
+def explode(chunks, point):
+    #return the black tokens that cannot be boomed by selected max boom white (func name change?)
+    newchunks=[]
+    ppoint=(0,point[0],point[1])
+    remove=[]
+    for i in range(len(chunks)):
+        for piece in chunks[i]:
+            if is_closed(ppoint, piece):
+                remove.append(i)
+
+    for j in range(len(chunks)):
+        if j not in remove:
+            newchunks.append(chunks[j])
+
+    return newchunks
+
+def find_boom_points(blackpos, whitenum, fail):    
+    boom_points=[]
+    chunks = [] 
+    newchunk=[]
+    position = blackpos.copy()
+    newchunk.append(position[0])
+    
+
+    chunks.append(newchunk)
+    position.pop(0)
+
+    # Scaning the dictionary to find out number of chunks in the game
+    #store individual chuncks in c, and c in chunck 
+    for i in position:
+        #create new chunk
+        newchunk = []
+        newchunk.append(i)
+        found=False
+        for c in chunks:
+            if found:
+                break
+            for p in c:
+                if is_closed(p,i):
+                    c.extend(newchunk)
+                    found=True
+                    break
+        if not found:
+            chunks.append(newchunk)
+
+    find=0
+    while find<whitenum:
+        boom_dict=find_boom_dict(chunks)
+        ##print_board(boom_dict)
+        max_point=maxpoint(boom_dict)
+        boom_points.append(max_point)
+        #explode all chunks required
+        chunks=explode(chunks, max_point)
+
+        find+=1
+
+    
+    return boom_points
+
+
+'''consider put white into safezone first before using another white to explode wall'''
+def safezone(chunk, boompoint):
+    safedict={}
+    for i in range(8):
+        for j in range(8):
+            point=(0,i,j)
+            safedict[(i,j)]=True
+            if is_closed(point,boompoint):   #boomed by exploded white
+                safedict[(i, j)] = False
+            else:
+                for p in chunk: #chain effect boomed by exploded blacks
+                    if is_closed(point, p):
+                        safedict[(i, j)] = False
+            
+    return safedict
+
+
+
+def board_init(board,blackpos,whitepos):
+    '''put initial white and black token positions on the board'''
+    for i in range(8):
+        for j in range(8):
+            board[(i,j)]=0
+            
+    for white in whitepos:
+        board[(white[1],white[2])] = white[0]
+    for black in blackpos:
+        board[(black[1],black[2])] = black[0]
+    return board
+
+
+
+
+class Node():
+    def __init__(self, parent=None, position=None):
+        self.parent = parent
+        self.position = position
+
+        self.g = 0
+        self.h = 0
+        self.f = 0
+
+    def __eq__(self, other):
+        return self.position == other.position
+
+
+def hamming(p1,p2):   
+    #when there is no blockage in between, manhattan dis
+    return math.fabs(p1[1]-p2[1])+math.fabs(p1[2]-p2[2])
+
+def h(targets, whites):
+    #comput sum of all closed points
+    total=0
+    for t in targets:
+        curent = -NEGINF
+        for j in whites:
+            if hamming(t,j)<curent:
+                    curent=hamming(t,j)
+        total+=curent
+    return total
+
+def samepos(nodelist, thisnode):
+    #check if the state has occurred before
+    for n in nodelist:
+        if n==thisnode:
+            return True
+
+    return False   
+    
+def pathsearch(targetpoints, whites, black_position):
+    #If can't find a path, return False, 
+	# Initialize both open and closed list
+    opened=[]
+    closed=[]
+    start= Node(None, whites)
+    start.g=0
+    start.h=h(targetpoints,whites)
+    start.f=start.g+start.h
+
+    opened.append(start)
+    end= [Node(None, targetpoints)]
+
+    #Loop until you find the end
+    while len(opened)>0:
+
+        # Get the current node with the smallest f value
+        minf=-NEGINF
+        curent=None
+        for node in opened:
+            if node.f<minf:
+                curent=node
+                minf=node.f
+        # add possible moves to the open list
+        for w in curent.position:
+            newpoints = curent.position.copy()
+            newpoints.remove(w)
+            mobility = w[0]
+            newx = w[1]
+            newy = w[2]
+            
+            # check move up
+            for m in range(mobility): ##start from 0, range+1 
+                newy = w[2] + (1 + m)
+                if newy >= 8:  ##redefine constant and add <0
+                    continue
+
+                newposition = (mobility, newx, newy)
+                # check if formed a larger stack
+                for p in whites:
+                    if newposition.equals(p): #除去自己
+                        mobility += p[0]
+                newposition = (mobility, newx, newy)
+                newpoints.append(newposition)
+                if not samepos(opened, newpoints) and not samepos(closed, newpoints):
+                    newnode = Node(newpoints)
+                    opened.append(newnode)
+                #found the final points
+                elif samepos(end,newpoints):
+                    return #movelist
+                
+            # check move down
+            for m in range(mobility):
+                newy = w[2] - (1 + m)
+                if newy < 0:
+                    continue
+
+                newposition = (mobility, newx, newy)
+                # check if formed a larger stack
+                for p in whites:
+                    if newposition.equals(p):
+                        mobility += p[0]
+                newposition = (mobility, newx, newy)
+                newpoints.append(newposition)
+                if not samepos(opened, newpoints) and not samepos(closed, newpoints):
+                    newnode = Node(newpoints)
+                    
+                    newnode.parent=curent
+                    newnode.h=h(end,newposition)
+                    newnode.g=curent.g+1
+                    newnode.f=newnode.g+newnode.h
+
+                    opened.append(newnode)
+                elif samepos(end,newpoints):
+                    return #movelist
+            # check move right
+            for m in range(mobility):
+                newx = w[1] + (1 + m)
+                if newx >= 8:
+                    continue
+
+                newposition = (mobility, newx, newy)
+                # check if formed a larger stack
+                for p in whites:
+                    if newposition.equals(p):
+                        mobility += p[0]
+                newposition = (mobility, newx, newy)
+                newpoints.append(newposition)
+                if not samepos(opened, newpoints) and not samepos(closed, newpoints):
+                    newnode = Node(newpoints)
+                    opened.append(newnode)
+                elif samepos(end, newpoints):
+                    return  # movelist
+            # check move left
+            for m in range(mobility):
+                newx = w[1] - (1 + m)
+                if newx < 0:
+                    continue
+
+                newposition = (mobility, newx, newy)
+                # check if formed a larger stack
+                for p in whites:
+                    if newposition.equals(p):
+                        mobility += p[0]
+                newposition = (mobility, newx, newy)
+                newpoints.append(newposition)
+                if not samepos(opened, newpoints) and not samepos(closed, newpoints):
+                    newnode = Node(newpoints)
+                    opened.append(newnode)
+                elif samepos(end, newpoints):
+                    return  # movelist
+        # Remove the current Node from the open
+        opened.remove(curent)
+        #Add the currentNode to the closed
+        closed.append(curent)
+
+	#print out move list by print move and print boom
+
+        
+       
+ 
+def manhattan(p1,p2):   
+    "returns manhattan distance between two points on the board"
+    return math.fabs(p1[1]-p2[0])+math.fabs(p1[2]-p2[1])      
+
+def astar(board, whitepos, blackpos, start, end): #reference 
+    """Returns (haspathOrNot, path_list)"""
+
+    # Create start and end node
+    start_node = Node(None, start)
+    start_node.g = start_node.h = start_node.f = 0
+    end_node = Node(None, end)
+    end_node.g = end_node.h = end_node.f = 0
+    
+    
+    # Initialize both open and closed list
+    open_list = []
+    closed_list = []
+
+    # Add the start node
+    open_list.append(start_node)
+
+    
+    # Loop until you find the end
+    while len(open_list) > 0:
+
+        # Get the current node
+        current_node = open_list[0]
+        current_index = 0
+        for index, item in enumerate(open_list):
+            if item.f < current_node.f:
+                current_node = item
+                current_index = index
+                
+
+        # Pop current off open list, add to closed list
+        #open_list.pop(current_index)
+        open_list = []
+        closed_list.append(current_node)
+        
+        print("current node is: ")
+        print(current_node.position)
+
+        # Found the goal
+        if current_node.position[1] == end[0] and current_node.position[2] == end[1]: 
+            path = []
+            current = current_node
+            while current is not None:
+                path.append(current.position)
+                current = current.parent
+            return (True, path) 
+
+        # Generate children
+        children = []
+    
+            
+        #print(current_node.position)
+        for i in range(current_node.position[0]): #reachable depth
+            move = i+1
+               
+            for new_position in [(0, -1), (0, 1), (-1, 0), (1, 0)]: # Adjacent 4 directions 
+                print(new_position)
+                exit_flag = exit_flag1 = False
+                # Get node position
+                next_x = move * new_position[0] + current_node.position[1] 
+                next_y = move * new_position[1]+ current_node.position[2]
+
+                # Make sure within board boundaries
+                if next_x > BOARDLEN  or next_x <0 or next_y>BOARDLEN or next_y<0:
+                    continue
+                
+                # Make sure new position does not occupied by black
+                for black in blackpos:
+                    if black[1]== next_x  and  black[2]== next_y:
+                        exit_flag = True
+                        break
+                if exit_flag == True:
+                    continue
+                
+                # make sure new position not on the closed list
+                for closed_child in closed_list:
+                    if  closed_child.position[1]== next_x  and  closed_child.position[2]== next_y:
+                        exit_flag1 = True
+                        break
+                if exit_flag1 == True:
+                    continue
+                
+                node_position = [current_node.position[0]+ board.get((next_x,next_y)), next_x, next_y]
+                
+                if current_node.parent is not None: ##bug 
+                    if current_node.parent.position[0] != current_node.position[0]: #formed stack at current node 
+                        node_position[0] = 1    #assume we only use stack as jumping board just move one token
+
+                '''#check if newposition occupied by white 
+                for white in whitepos:
+                    if next_x == white[1] and next_y == white[2]:
+                        old_n = board[(next_x,next_y)]
+                    break'''
+                        
+                # Create new node
+                new_node = Node(current_node, node_position)
+
+                # Append
+                children.append(new_node)
+
+            # Loop through children
+            for child in children:
+                exit_flag2 = False
+                print("child is: ")
+                print(child.position)
+
+                # Create the f, g, and h values
+                child.g = current_node.g + 1
+                child.h = manhattan(child.position,end)
+                child.f = child.g + child.h
+
+                '''# Child is already in the open list
+                for open_node in open_list:
+                    if child == open_node and child.g > open_node.g:
+                        exit_flag2 = True
+                        break
+                if exit_flag2 == True:
+                    continue'''
+
+                # Add the child to the open list
+                open_list.append(child)
+        
+    #len(open_list) == 0 means no further possible moves
+    return False,None
+            
+        
+
+            
+   
+   
+   
+def find_combination(board,whitepos,targetpoints,blackpos):
+   
+    perm = list(permutations(targetpoints))
+    final_path =[]
+    
+    min_cost = INF
+    for index,item in enumerate(perm):
+        merged_list = [(whitepos[i], item[i]) for i in range(0, len(whitepos))] 
+        
+        current_path = []
+        count = 0 
+        for pair in merged_list:
+            haspath = astar(board,whitepos,blackpos,pair[0],pair[1])
+            if haspath[0] is True:
+                count+=1
+        
+        if count != len(merged_list):
+            continue
+        
+        cost_tot = 0
+        if count == len(merged_list):  #all start_end pair has path
+            for pair in merged_list:
+                haspath = astar(board,whitepos,blackpos,pair[0],pair[1])
+                cost_tot += len(haspath[1])-1
+                current_path.append(haspath[1])
+                
+        if cost_tot < min_cost:
+            min_cost = cost_tot
+            final_path= current_path
+
+    return final_path
+
+            
+            
+        
+       
+    
+        
+def main():
+    with open(sys.argv[1]) as file:
+        data = json.load(file)
+
+    blackpos=data["black"]
+    whitepos=data["white"]
+    board={}
+    init_board = {}
+    fail=[]
+    whitenum=len(whitepos)
+  
+    init_board = board_init(init_board,blackpos,whitepos)
+
+    print_board(init_board)
+    
+    for p in blackpos:
+        i=p[1]
+        j=p[2]
+        board[(i,j)]=p[0]
+    targetpoints=find_boom_points(blackpos, whitenum,fail)
+    #print(targetpoints)
+    for b in blackpos:
+        print(b)
+    
+    #print(astar(init_board,whitepos,blackpos,[1,1,0],(3,6))[1])
+    
+    solution = find_combination (init_board,whitepos,targetpoints,blackpos)
+    #print(solution)
+    
+    #print out solution with format
+    for s in solution:
+        new = s[::-1]
+        #print(new)
+        for i in range(len(new)-1):
+            print_move(new[i][0],new[i][1],new[i][2],new[i+1][1],new[i+1][2]) 
+        print_boom(new[i+1][1],new[i+1][2])
+    
+
+if __name__ == '__main__':
+    main()
+        
+
+   
+   
+'''for white in whitepos:
+    
+    for target in targetpoints:
+        isfound = astar(board,whitepos,blackpos,white,target)[0]
+        if isfound is True:
+            whitepos.remove(white)
+            whitepos.append([1,target[0],target[1]])
+            targetpoints.remove(target)
+            break '''
+        
+        
+
+
+
+'''for n in range(current_node.position[0])+1:  #move up to n white tokens, but here not consider optimality just asssume move 1 token everytime
+                    
+                #dynamic update white position in list according to number of token moved after stack forming 
+                if current_node.position[0] != current_node.parent[0]: 
+                    #stack has formed 
+                        for index, white in enumerate(whitepos):
+                        if white[1] == current_node.position[1] and white[2] == current_node.position[2]:
+                            found_id = index
+                            if n == current_node.position[0]: 
+                                whitepos.remove(white) ##check if whitepos has been updated
+
+                            if n == old_n:
+                                whitepos[found_id][0] = current_node.position[0] - old_n'''
